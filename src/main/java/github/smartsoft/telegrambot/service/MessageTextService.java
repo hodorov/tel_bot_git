@@ -1,63 +1,63 @@
 package github.smartsoft.telegrambot.service;
 
+import github.smartsoft.telegrambot.entity.MessageText;
 import github.smartsoft.telegrambot.entity.Username;
 import github.smartsoft.telegrambot.utils.TelegramUtils;
+import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@AllArgsConstructor
 public class MessageTextService {
     private final GithubService githubService;
     private final TelegramUtils utils;
 
-    public MessageTextService(GithubService githubService, TelegramUtils utils) {
-        this.githubService = githubService;
-        this.utils = utils;
-    }
-
-    public String messageHandler(String text, Username username) {
+    public MessageText messageHandler(String text, Username username) {
         if (text.startsWith("/start")) {
-            return "Укажите логин на гитхабе с помощью команды /username";
+            return MessageText.ENTER_LOGIN;
         }
         if (text.startsWith("/username ")) {
             if (username == null) {
-                return "Логин добавлен";
+                return MessageText.LOGIN_ADDED;
             }
             if (!githubService.existsGitUsername(utils.userName(text))) {
-                return "На github нет такого пользователя";
+                return MessageText.NOT_GITHUB_USER;
             }
             if (username.getGithubUsername().equals(utils.userName(text))) {
-                return "Такой логин уже существует";
+                return MessageText.LOGIN_EXISTS;
             }
-            return String.format(
-                    "Логин %s изменен на %s",
-                    username.getGithubUsername(),
-                    utils.userName(text));
+            return MessageText.LOGIN_CHANGED;
+//            return String.format(
+//                    "Логин %s изменен на %s",
+//                    username.getGithubUsername(),
+//                    utils.userName(text));
         }
         if (text.startsWith("/create ") || text.startsWith("/access ")) {
             if (username == null) {
-                return "Логин не существует, воспользуйтесь командой /username";
+                return MessageText.LOGIN_NOT_ENTER;
             }
         }
         if (text.startsWith("/create ")) {
             if (githubService.existsGitRepository(utils.repositoryName(text))) {
-                return "Репозиторий уже существует";
+                return MessageText.REPO_EXISTS;
             }
             if (username.isTeamlead()) {
-                return "Репозиторий " + utils.repositoryName(text) + " создан";
+                return MessageText.REPO_ADDED;
+//                return "Репозиторий " + utils.repositoryName(text) + " создан";
             }
-            return "Запрос на создание зарегистрирован";
+            return MessageText.CREATE_REPO_REQ;
         }
         if (text.startsWith("/access ")) {
             if (githubService.existsAccessGitRepository(
                     username.getGithubUsername(),
                     utils.repositoryName(text))) {
-                return "Доступ уже предоставлен";
+                return MessageText.ACCESS_EXISTS;
             }
             if (username.isTeamlead()) {
-                return "Доступ к репозиторию " + utils.repositoryName(text) + " предоставлен";
+                return MessageText.ACCESS_ADDED;
             }
-            return "Запрос на доступ зарегистрирован";
+            return MessageText.ACCESS_REPO_REQ;
         }
-        return "";
+        return MessageText.NONE;
     }
 }

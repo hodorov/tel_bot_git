@@ -1,11 +1,14 @@
 package github.smartsoft.telegrambot.bot;
 
-import github.smartsoft.telegrambot.entity.CreateRepository;
+import github.smartsoft.telegrambot.entity.CreateRequest;
+import github.smartsoft.telegrambot.entity.MessageText;
 import github.smartsoft.telegrambot.entity.Status;
 import github.smartsoft.telegrambot.entity.Username;
 import github.smartsoft.telegrambot.service.*;
 import github.smartsoft.telegrambot.utils.TelegramUtils;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Component;
@@ -19,38 +22,28 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 @Component
 @Slf4j
+@RequiredArgsConstructor
 @PropertySource("classpath:telegram.properties")
 public class Bot extends TelegramLongPollingBot {
-    private final UsernameService usernameService;
-    private final CreateRepositoryService createRepositoryService;
-    private final AccessRepositoryService accessRepositoryService;
-    private final GithubService githubService;
-    private final MessageTextService messageTextService;
-    private final TelegramUtils utils;
-
-    public Bot(UsernameService usernameService,
-               CreateRepositoryService createRepositoryService,
-               AccessRepositoryService accessRepositoryService,
-               GithubService githubService,
-               MessageTextService messageTextService,
-               TelegramUtils utils) {
-        this.usernameService = usernameService;
-        this.createRepositoryService = createRepositoryService;
-        this.accessRepositoryService = accessRepositoryService;
-        this.githubService = githubService;
-        this.messageTextService = messageTextService;
-        this.utils = utils;
-    }
-
     @Value("${bot.name}")
     private String botUsername;
     @Value("${bot.token}")
     private String botToken;
     @Value("${bot.teamlead}")
-    private Long teamleadChatId;
+    private long teamleadChatId;
+
+    private final UsernameService usernameService;
+    private final CreateRequestService createRequestService;
+    private final AccessRequestService accessRequestService;
+    private final GithubService githubService;
+    private final MessageTextService messageTextService;
+    private final TelegramUtils utils;
 
     @Override
     public void onUpdateReceived(Update update) {
+        String create = MessageText.valueOf("CREATE_REPO").toString();
+        String access = MessageText.valueOf("ACCESS_REPO").toString();
+        String teamleadText = null;
         String sendText = null;
         Message message;
         String text;
@@ -63,19 +56,26 @@ public class Bot extends TelegramLongPollingBot {
             chatId = message.getFrom().getId().longValue();
             String chatName = message.getFrom().getUserName();
             username = usernameService.getUsername(chatId);
-            sendText = messageTextService.messageHandler(message.getText(),
+            MessageText messageText = messageTextService.messageHandler(message.getText(),
                     username);
-            String teamleadChat;
+            sendText = messageText.toString().contains("%s") ?
+                    String.format(messageText.toString(), utils.repositoryName(text)) :
+                    messageText.toString();
+
             Integer messageId;
 
-            if (sendText.contains("Логин добавлен")) {
+            if (messageText.equals(MessageText.LOGIN_ADDED)) {
                 usernameService.createUsername(chatId, utils.userName(text));
             }
-            if (sendText.contains("изменен")) {
+            if (messageText.equals(MessageText.LOGIN_CHANGED)) {
+                sendText = String.format(
+                        sendText,
+                        username.getGithubUsername(),
+                        utils.userName(text));
                 usernameService.updateUsername(chatId, utils.userName(text));
             }
-            if (sendText.contains("создан")) {
-                createRepositoryService.createRepository(
+            if (messageText.equals(MessageText.REPO_ADDED)) {
+                createRequestService.create(
                         utils.repositoryName(text),
                         username,
                         null,
@@ -83,36 +83,36 @@ public class Bot extends TelegramLongPollingBot {
                 githubService.createGitRepository(
                         utils.repositoryName(text));
             }
-            if (sendText.contains("Доступ к репозиторию")) {
-                accessRepositoryService.accessRepository(
+            if (messageText.equals(MessageText.ACCESS_ADDED)) {
+                accessRequestService.create(
                         utils.repositoryName(text),
                         username,
                         null,
                         Status.ACCEPTED);
                 githubService.accessGitRepository(
-                        utils.repositoryName(text));
+                        utils.repositoryName(text), username.getGithubUsername());
             }
-            if (sendText.contains("Запрос на создание зарегистрирован")) {
-                teamleadChat = utils.teamleadText(
-                        "Создание репозитория", text, username, chatName);
+            if (messageText.equals(MessageText.CREATE_REPO_REQ)) {
+                teamleadText = utils.teamleadText(
+                        create, text, username, chatName);
                 messageId =  sendMessage(
-                        teamleadChat,
+                        teamleadText,
                         teamleadChatId,
-                        utils.createInlineKeyboardMarkup("crOne", "crTwo"));
-                createRepositoryService.createRepository(
+                        utils.createInlineKeyboardMarkup("crYes", "crNo"));
+                createRequestService.create(
                         utils.repositoryName(text),
                         username,
                         messageId,
                         Status.WAIT);
             }
-            if (sendText.contains("Запрос на доступ зарегистрирован")) {
-                teamleadChat = utils.teamleadText(
-                        "Доступ к репозиторию", text, username, chatName);
+            if (messageText.equals(MessageText.ACCESS_REPO_REQ)) {
+                teamleadText = utils.teamleadText(
+                        access, text, username, chatName);
                 messageId =  sendMessage(
-                        teamleadChat,
+                        teamleadText,
                         teamleadChatId,
-                        utils.createInlineKeyboardMarkup("acOne", "acTwo"));
-                accessRepositoryService.accessRepository(
+                        utils.createInlineKeyboardMarkup("acYes", "acNo"));
+                accessRequestService.create(
                         utils.repositoryName(text),
                         username,
                         messageId,
@@ -122,42 +122,41 @@ public class Bot extends TelegramLongPollingBot {
             message = update.getCallbackQuery().getMessage();
             text = update.getCallbackQuery().getData();
             Integer messageId = message.getMessageId();
-            CreateRepository createRepository = createRepositoryService
-                    .getCreateRepository(messageId);
+            CreateRequest createRepository = createRequestService.get(messageId);
             username = createRepository.getTelegramId();
             chatId = username.getTelegramId();
             String repositoryName = createRepository.getRepo();
-            String teamleadText = null;
 
             if (text.equals("crYes")) {
                 githubService.createGitRepository(repositoryName);
-                createRepositoryService.updateCreateRepositoryByStatus(
-                        messageId,
-                        Status.ACCEPTED);
-                teamleadText = "Создание репозитория " + repositoryName + " принято";
+                githubService.accessGitRepository(
+                        repositoryName,
+                        username.getGithubUsername());
+                createRequestService.update(messageId, Status.ACCEPTED);
+                teamleadText = create + repositoryName + " принято";
                 sendText = "Репозиторий " + repositoryName + " создан";
             }
             if (text.equals("crNo")) {
-                createRepositoryService.updateCreateRepositoryByStatus(
-                        messageId,
-                        Status.REJECTED);
-                teamleadText = "Создание репозитория " + repositoryName + " отклонено";
+                createRequestService.update(messageId, Status.REJECTED);
+                teamleadText = create + repositoryName + " отклонено";
                 sendText = "В создании репозитория " + repositoryName + " отказано";
             }
             if (text.equals("acYes")) {
-                githubService.accessGitRepository(repositoryName);
-                accessRepositoryService.updateAccessRepositoryByStatus(
+                githubService.accessGitRepository(
+                        repositoryName,
+                        username.getGithubUsername());
+                accessRequestService.update(
                         messageId,
                         Status.ACCEPTED);
                 teamleadText = "Доступ к " + repositoryName + " предоставлен";
-                sendText = "Доступ к репозиторию " + repositoryName + " предоставлен";
+                sendText = access + repositoryName + " предоставлен";
             }
-            if (text.equals("crNo")) {
-                accessRepositoryService.updateAccessRepositoryByStatus(
+            if (text.equals("acNo")) {
+                accessRequestService.update(
                         messageId,
                         Status.REJECTED);
                 teamleadText = "Доступ к " + repositoryName + " отклонен";
-                sendText = "В доступе к репозиторию " + repositoryName + " отказано";
+                sendText = access + repositoryName + " отказано";
             }
             if (teamleadText != null) {
                 editMessage(teamleadText, messageId);

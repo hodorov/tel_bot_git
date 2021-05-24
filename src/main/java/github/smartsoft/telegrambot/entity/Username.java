@@ -3,7 +3,6 @@ package github.smartsoft.telegrambot.entity;
 import javax.persistence.*;
 import java.io.Serializable;
 import java.util.Collection;
-import java.util.List;
 
 @Entity
 @Table(name = "github_nickname")
@@ -22,7 +21,7 @@ public class Username implements Serializable {
     private boolean isTeamlead = false;
 
     @OneToMany(mappedBy = "telegramId", fetch = FetchType.EAGER)
-    private Collection<CreateRepository> createRepositories;
+    private Collection<CreateRequest> createRepositories;
 
     public Long getId() {
         return id;
@@ -56,11 +55,11 @@ public class Username implements Serializable {
         isTeamlead = teamlead;
     }
 
-    public Collection<CreateRepository> getCreateRepositories() {
+    public Collection<CreateRequest> getCreateRepositories() {
         return createRepositories;
     }
 
-    public void setCreateRepositories(Collection<CreateRepository> createRepositories) {
+    public void setCreateRepositories(Collection<CreateRequest> createRepositories) {
         this.createRepositories = createRepositories;
     }
 }

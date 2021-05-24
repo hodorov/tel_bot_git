@@ -4,6 +4,6 @@ import javax.persistence.Entity;
 import javax.persistence.Table;
 
 @Entity
-@Table(name = "create_request")
-public class CreateRepository extends BaseRepository {
+@Table(name = "access_request")
+public class AccessRequest extends BaseRequest {
 }
